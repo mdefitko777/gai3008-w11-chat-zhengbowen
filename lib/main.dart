@@ -120,6 +120,9 @@ class _ChatPageState extends State<ChatPage> {
   /// 마지막 요청이 실패했을 때 보여 줄 문구. null이면 오류 없음.
   String? _error;
 
+  /// 마지막으로 AI에 보낸 글. 다시 시도하면 이 글을 그대로 다시 보낸다.
+  String? _lastText;
+
   TestMode _mode = TestMode.ok;
 
   @override
@@ -143,6 +146,7 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       _waiting = true;
       _error = null;
+      _lastText = text;
     });
     try {
       final answer = await _ai.chat(text).timeout(widget.timeout);
@@ -176,17 +180,15 @@ class _ChatPageState extends State<ChatPage> {
     _ => '네트워크를 확인해 주세요',
   };
 
-  /// ✅ 실습 ④-2 — 오류 말풍선 + 다시 시도
-  ///    실패한 내 말풍선을 거두고, 그 글을 입력창에 되돌려 놓는다.
-  ///    그대로 다시 보내거나 고쳐서 보내면 된다.
+  /// ✅ 실습 ④-2 — 오류 말풍선 + 다시 시도 (버튼은 _ErrorBubble)
+  /// ✅ 실습 ④-3 — 재시도는 마지막 메시지를 다시
+  ///    다시 입력할 필요 없이, 실패한 마지막 메시지를 그대로 한 번 더 보낸다.
+  ///    내 말풍선은 이미 목록에 있으므로 새로 붙이지 않고,
+  ///    그사이 입력창에 쓰던 글도 건드리지 않는다.
   void _retry() {
-    if (_waiting || _messages.isEmpty || !_messages.last.isUser) return;
-    late final ChatMessage failed;
-    setState(() {
-      failed = _messages.removeLast();
-      _error = null;
-    });
-    _controller.text = failed.text;
+    final text = _lastText;
+    if (_waiting || text == null) return;
+    _request(text);
   }
 
   void _setMode(TestMode mode) {

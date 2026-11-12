@@ -186,26 +186,43 @@ void main() {
     expect(find.text('"두 번째 질문"에 대한 답변입니다.'), findsOneWidget);
   });
 
-  testWidgets('④-2 다시 시도를 누르면 실패한 글이 입력창으로 돌아온다', (WidgetTester tester) async {
-    final client = fastClient(failWith: 401);
+  testWidgets('④-2 오류 말풍선에 다시 시도 버튼이 있다', (WidgetTester tester) async {
+    await tester.pumpWidget(chatApp(client: fastClient(failWith: 401)));
+
+    await send(tester, '질문');
+    await settle(tester);
+
+    expect(
+      find.descendant(of: errorBubble, matching: find.text('다시 시도')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('④-3 다시 시도는 마지막 메시지를 그대로 다시 보낸다', (WidgetTester tester) async {
+    final client = fastClient(failWith: 500);
     await tester.pumpWidget(chatApp(initialMessages: [], client: client));
 
     await send(tester, '실패할 질문');
     await settle(tester);
-    expect(find.text('다시 시도'), findsOneWidget);
+    expect(errorBubble, findsOneWidget);
 
+    // 서버가 살아났다고 치고, 그사이 입력창에 다른 글을 쓰다가 다시 시도를 누른다
+    client.failWith = null;
+    await tester.enterText(find.byType(TextField), '쓰던 글');
     await tester.tap(find.text('다시 시도'));
     await tester.pump();
 
-    // 오류 말풍선은 사라지고, 실패한 글은 목록이 아니라 입력창에 있다
     expect(errorBubble, findsNothing);
+    expect(typingBubble, findsOneWidget);
+
+    await settle(tester);
+
+    // 같은 질문의 답이 오고, 내 말풍선은 하나뿐이며, 쓰던 글은 그대로다
+    expect(find.text('"실패할 질문"에 대한 답변입니다.'), findsOneWidget);
+    expect(find.text('실패할 질문'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
-      '실패할 질문',
-    );
-    expect(
-      find.descendant(of: find.byType(ListView), matching: find.text('실패할 질문')),
-      findsNothing,
+      '쓰던 글',
     );
   });
 
