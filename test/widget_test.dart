@@ -3,12 +3,28 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lab1_chat_ui/main.dart';
 
+/// 테스트용 화면. 답변이 0.1초 만에 오는 가짜 AI를 쓴다.
+Widget chatApp({List<ChatMessage>? initialMessages, FakeAiClient? client}) {
+  return MaterialApp(
+    home: ChatPage(
+      initialMessages: initialMessages,
+      client: client ?? FakeAiClient(delay: const Duration(milliseconds: 100)),
+    ),
+  );
+}
+
+/// 답변이나 오류가 나올 때까지 시간을 충분히 흘린다.
+Future<void> settle(WidgetTester tester) =>
+    tester.pump(const Duration(seconds: 10));
+
+final typingBubble = find.byKey(const Key('typing-bubble'));
+
 void main() {
   testWidgets('앱이 뜨고 가짜 대화가 보인다', (WidgetTester tester) async {
     await tester.pumpWidget(const ChatLabApp());
 
     // 제목
-    expect(find.text('AI Chat — 실습 1'), findsOneWidget);
+    expect(find.text('AI Chat — 실습 4'), findsOneWidget);
 
     // 할 일 1 — 목록이 그려진다
     expect(find.byType(ListView), findsOneWidget);
@@ -41,34 +57,57 @@ void main() {
     expect(aiAlign.alignment, Alignment.centerLeft);
   });
 
-  testWidgets('글을 보내면 목록에 추가되고 입력창이 비워진다', (WidgetTester tester) async {
-    await tester.pumpWidget(const ChatLabApp());
+  testWidgets('보내면 타이핑 점이 뜨고, 답이 오면 AI 말풍선이 붙는다', (WidgetTester tester) async {
+    await tester.pumpWidget(chatApp());
 
     await tester.enterText(find.byType(TextField), '안녕하세요');
     await tester.tap(find.byIcon(Icons.send));
     await tester.pump();
 
-    // 말풍선에 하나만 있고, 입력창에는 남아 있지 않다
+    // 내 말풍선이 바로 보이고, 입력창은 비워지고, 점 3개가 뜬다
     expect(find.text('안녕하세요'), findsOneWidget);
     expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+    expect(typingBubble, findsOneWidget);
+
+    await settle(tester);
+
+    expect(typingBubble, findsNothing);
+    expect(find.text('"안녕하세요"에 대한 답변입니다.'), findsOneWidget);
+  });
+
+  testWidgets('답을 기다리는 동안에는 다시 보낼 수 없다', (WidgetTester tester) async {
+    await tester.pumpWidget(chatApp(initialMessages: []));
+
+    await tester.enterText(find.byType(TextField), '첫 질문');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), '두 번째 질문');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pump();
+
+    expect(find.text('두 번째 질문'), findsOneWidget); // 입력창에만 남아 있다
+    expect(
+      find.descendant(of: find.byType(ListView), matching: find.text('두 번째 질문')),
+      findsNothing,
+    );
+
+    await settle(tester);
   });
 
   testWidgets('공백만 있으면 보내지 않는다', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(home: ChatPage(initialMessages: [])),
-    );
+    await tester.pumpWidget(chatApp(initialMessages: []));
 
     await tester.enterText(find.byType(TextField), '   ');
     await tester.tap(find.byIcon(Icons.send));
     await tester.pump();
 
     expect(find.text('무엇이든 물어보세요'), findsOneWidget);
+    expect(typingBubble, findsNothing);
   });
 
   testWidgets('목록이 비면 빈 상태 문구가 보이고, 보내면 사라진다', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(home: ChatPage(initialMessages: [])),
-    );
+    await tester.pumpWidget(chatApp(initialMessages: []));
 
     expect(find.text('무엇이든 물어보세요'), findsOneWidget);
 
@@ -78,6 +117,8 @@ void main() {
 
     expect(find.text('무엇이든 물어보세요'), findsNothing);
     expect(find.text('첫 질문'), findsOneWidget);
+
+    await settle(tester);
   });
 
   testWidgets('키보드가 올라와도 입력창이 가려지지 않는다', (WidgetTester tester) async {
