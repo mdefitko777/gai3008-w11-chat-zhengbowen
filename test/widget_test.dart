@@ -3,13 +3,24 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lab1_chat_ui/main.dart';
 
-/// 테스트용 가짜 AI — 답변이 0.1초 만에 온다.
-FakeAiClient fastClient({int? failWith}) =>
-    FakeAiClient(delay: const Duration(milliseconds: 100))..failWith = failWith;
+/// 테스트용 가짜 AI — 기본은 답변이 0.1초 만에 온다.
+FakeAiClient fastClient({
+  int? failWith,
+  Duration delay = const Duration(milliseconds: 100),
+}) => FakeAiClient(delay: delay)..failWith = failWith;
 
 /// 테스트용 화면. timeout도 1초로 줄여 둔다.
-Widget chatApp({List<ChatMessage>? initialMessages, FakeAiClient? client}) {
+/// [reduceMotion]이면 기기의 "애니메이션 줄이기"가 켜진 것처럼 띄운다.
+Widget chatApp({
+  List<ChatMessage>? initialMessages,
+  FakeAiClient? client,
+  bool reduceMotion = false,
+}) {
   return MaterialApp(
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(disableAnimations: reduceMotion),
+      child: child!,
+    ),
     home: ChatPage(
       initialMessages: initialMessages,
       client: client ?? fastClient(),
@@ -18,9 +29,19 @@ Widget chatApp({List<ChatMessage>? initialMessages, FakeAiClient? client}) {
   );
 }
 
-/// 답변이나 오류가 나올 때까지 시간을 충분히 흘린다.
-Future<void> settle(WidgetTester tester) =>
-    tester.pump(const Duration(seconds: 10));
+/// 상태 칸 전환(200ms)이 끝날 때까지만 기다린다.
+/// 첫 pump()에서 전환이 시작되고, 다음 300ms 동안 끝난다.
+Future<void> switchDone(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
+/// 답변이나 오류가 나올 때까지 시간을 충분히 흘리고,
+/// 그다음 상태 칸 전환(200ms)이 끝날 때까지 한 번 더 기다린다.
+Future<void> settle(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 10));
+  await switchDone(tester);
+}
 
 /// 글을 입력하고 전송 버튼을 누른다.
 Future<void> send(WidgetTester tester, String text) async {
@@ -29,8 +50,17 @@ Future<void> send(WidgetTester tester, String text) async {
   await tester.pump();
 }
 
-final typingBubble = find.byKey(const Key('typing-bubble'));
-final errorBubble = find.byKey(const Key('error-bubble'));
+// 상태 칸은 전환이 시작될 때 높이가 0이라 "화면 밖"으로 취급된다.
+// 그래서 skipOffstage: false로 높이와 상관없이 찾는다.
+final typingBubble = find.byKey(
+  const Key('typing-bubble'),
+  skipOffstage: false,
+);
+final errorBubble = find.byKey(const Key('error-bubble'), skipOffstage: false);
+final statusSwitcher = find.byKey(
+  const Key('status-switcher'),
+  skipOffstage: false,
+);
 
 void main() {
   testWidgets('앱이 뜨고 가짜 대화가 보인다', (WidgetTester tester) async {
@@ -199,7 +229,8 @@ void main() {
   });
 
   testWidgets('④-3 다시 시도는 마지막 메시지를 그대로 다시 보낸다', (WidgetTester tester) async {
-    final client = fastClient(failWith: 500);
+    // 답이 1초 걸리게 해서, 다시 시도 직후의 타이핑 점을 볼 수 있게 한다
+    final client = fastClient(failWith: 500, delay: const Duration(seconds: 1));
     await tester.pumpWidget(chatApp(initialMessages: [], client: client));
 
     await send(tester, '실패할 질문');
@@ -210,7 +241,7 @@ void main() {
     client.failWith = null;
     await tester.enterText(find.byType(TextField), '쓰던 글');
     await tester.tap(find.text('다시 시도'));
-    await tester.pump();
+    await switchDone(tester);
 
     expect(errorBubble, findsNothing);
     expect(typingBubble, findsOneWidget);
@@ -224,6 +255,43 @@ void main() {
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       '쓰던 글',
     );
+  });
+
+  testWidgets('④-4 오류 말풍선은 AnimatedSwitcher로 200ms 동안 서서히 나타난다', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(chatApp(client: fastClient(failWith: 500)));
+
+    await send(tester, '질문');
+    await tester.pump(const Duration(milliseconds: 100)); // 오류 도착
+    await tester.pump(const Duration(milliseconds: 100)); // 전환 절반
+
+    final switcher = tester.widget<AnimatedSwitcher>(statusSwitcher);
+    expect(switcher.duration, const Duration(milliseconds: 200));
+
+    // 전환 도중에는 반쯤 투명하다
+    final fade = tester.widget<FadeTransition>(
+      find
+          .ancestor(of: errorBubble, matching: find.byType(FadeTransition))
+          .first,
+    );
+    expect(fade.opacity.value, inExclusiveRange(0.0, 1.0));
+
+    await switchDone(tester);
+    expect(fade.opacity.value, 1.0);
+  });
+
+  testWidgets('④-4 애니메이션 줄이기가 켜지면 즉시 바뀐다', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      chatApp(client: fastClient(failWith: 500), reduceMotion: true),
+    );
+
+    final switcher = tester.widget<AnimatedSwitcher>(statusSwitcher);
+    expect(switcher.duration, Duration.zero);
+
+    await send(tester, '질문');
+    await settle(tester);
+    expect(errorBubble, findsOneWidget);
   });
 
   testWidgets('키보드가 올라와도 입력창이 가려지지 않는다', (WidgetTester tester) async {

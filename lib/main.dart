@@ -196,12 +196,42 @@ class _ChatPageState extends State<ChatPage> {
     _ai.failWith = mode.status;
   }
 
+  /// ✅ 실습 ④-4 — AnimatedSwitcher로 전환
+  ///    목록 맨 아래(index 0)는 늘 "상태 칸"이다.
+  ///    타이핑 점 ↔ 오류 말풍선 ↔ 빈 칸이 툭 바뀌지 않고 200ms 동안 서서히 바뀐다.
+  ///    애니메이션 줄이기(Reduce Motion)가 켜져 있으면 즉시 바꾼다 — 정보는 그대로.
+  Widget _statusSlot(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+    final Widget child;
+    if (_waiting) {
+      child = const _TypingBubble();
+    } else if (_error case final error?) {
+      child = _ErrorBubble(message: error, onRetry: _retry);
+    } else {
+      child = const SizedBox.shrink();
+    }
+
+    return AnimatedSwitcher(
+      key: const Key('status-switcher'),
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 200),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SizeTransition(
+          sizeFactor: animation,
+          alignment: Alignment.topCenter,
+          child: child,
+        ),
+      ),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    // 기다리는 중이거나 오류가 있으면 목록 맨 아래(index 0)에 한 칸 더 붙는다.
-    final hasStatus = _waiting || _error != null;
-    final extra = hasStatus ? 1 : 0;
 
     return Scaffold(
       // ✅ 할 일 5 — 키보드가 입력창을 가리지 않게
@@ -245,15 +275,10 @@ class _ChatPageState extends State<ChatPage> {
                   ListView.builder(
                     reverse: true,
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _messages.length + extra,
+                    itemCount: _messages.length + 1,
                     itemBuilder: (context, index) {
-                      if (hasStatus && index == 0) {
-                        return _waiting
-                            ? const _TypingBubble()
-                            : _ErrorBubble(message: _error!, onRetry: _retry);
-                      }
-                      final message =
-                          _messages[_messages.length - 1 - (index - extra)];
+                      if (index == 0) return _statusSlot(context);
+                      final message = _messages[_messages.length - index];
                       return _Bubble(message: message);
                     },
                   ),
