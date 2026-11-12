@@ -9,6 +9,19 @@ FakeAiClient fastClient({
   Duration delay = const Duration(milliseconds: 100),
 }) => FakeAiClient(delay: delay)..failWith = failWith;
 
+/// AI에 몇 번 물었는지 세는 가짜 AI — 백오프 재시도 횟수를 확인한다.
+class CountingClient extends FakeAiClient {
+  CountingClient() : super(delay: const Duration(milliseconds: 100));
+
+  int calls = 0;
+
+  @override
+  Future<String> chat(String text) {
+    calls++;
+    return super.chat(text);
+  }
+}
+
 /// 테스트용 화면. timeout도 1초로 줄여 둔다.
 /// [reduceMotion]이면 기기의 "애니메이션 줄이기"가 켜진 것처럼 띄운다.
 Widget chatApp({
@@ -291,6 +304,58 @@ void main() {
 
     await send(tester, '질문');
     await settle(tester);
+    expect(errorBubble, findsOneWidget);
+  });
+
+  testWidgets('④-5 429가 한 번이면 1초 기다렸다 다시 보내서 성공한다', (
+    WidgetTester tester,
+  ) async {
+    final client = CountingClient()
+      ..failWith = 429
+      ..failTimes = 1;
+    await tester.pumpWidget(chatApp(initialMessages: [], client: client));
+
+    await send(tester, '질문');
+    // 첫 응답(0.1초)은 429 → 1초 백오프 중. 오류 없이 타이핑 점만 보인다.
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(errorBubble, findsNothing);
+    expect(typingBubble, findsOneWidget);
+
+    await settle(tester);
+
+    expect(client.calls, 2);
+    expect(errorBubble, findsNothing);
+    expect(find.text('"질문"에 대한 답변입니다.'), findsOneWidget);
+    expect(find.text('질문'), findsOneWidget); // 내 말풍선은 하나뿐
+  });
+
+  testWidgets('④-5 429가 계속되면 1초 → 2초 두 번 더 시도한 뒤 오류를 보인다', (
+    WidgetTester tester,
+  ) async {
+    final client = CountingClient()..failWith = 429;
+    await tester.pumpWidget(chatApp(client: client));
+
+    await send(tester, '질문');
+
+    // 0.1초(실패) + 1초(쉼) + 0.1초(실패) 뒤 — 아직 2초 쉬는 중
+    await tester.pump(const Duration(milliseconds: 1700));
+    expect(client.calls, 2);
+    expect(errorBubble, findsNothing);
+
+    await settle(tester);
+
+    expect(client.calls, 3); // 처음 1번 + 백오프 2번
+    expect(find.text('잠시 후 다시 시도해 주세요'), findsOneWidget);
+  });
+
+  testWidgets('④-5 429가 아닌 오류는 다시 보내지 않는다', (WidgetTester tester) async {
+    final client = CountingClient()..failWith = 500;
+    await tester.pumpWidget(chatApp(client: client));
+
+    await send(tester, '질문');
+    await settle(tester);
+
+    expect(client.calls, 1);
     expect(errorBubble, findsOneWidget);
   });
 

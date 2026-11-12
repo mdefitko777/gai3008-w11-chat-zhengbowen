@@ -51,8 +51,19 @@ class FakeAiClient {
   /// [noResponse]면 답이 오지 않는다.
   int? failWith;
 
+  /// 앞으로 몇 번만 실패할지. 다 쓰면 다시 정상으로 돌아온다.
+  /// null이면 [failWith]를 끌 때까지 계속 실패한다.
+  int? failTimes;
+
   Future<String> chat(String text) async {
     final status = failWith;
+    if (status != null && failTimes != null) {
+      failTimes = failTimes! - 1;
+      if (failTimes! <= 0) {
+        failWith = null;
+        failTimes = null;
+      }
+    }
     if (status == noResponse) return Completer<String>().future;
     await Future<void>.delayed(delay);
     if (status != null) throw AiException(status);
@@ -64,14 +75,19 @@ class FakeAiClient {
 enum TestMode {
   ok('정상 응답', null),
   unauthorized('401 키/권한 오류', 401),
-  rateLimited('429 요청이 너무 많음', 429),
+  rateLimited('429 요청이 너무 많음 (계속)', 429),
+  // 웹 기본 글꼴에는 화살표(→)가 없어 네모로 보이므로 글로만 쓴다.
+  rateLimitedOnce('429 한 번 후 백오프로 성공', 429, 1),
   serverError('500 서버 오류', 500),
   timeout('timeout 응답 없음', FakeAiClient.noResponse);
 
-  const TestMode(this.label, this.status);
+  const TestMode(this.label, this.status, [this.times]);
 
   final String label;
   final int? status;
+
+  /// 몇 번만 실패할지. null이면 계속 실패한다.
+  final int? times;
 }
 
 class ChatPage extends StatefulWidget {
@@ -80,6 +96,7 @@ class ChatPage extends StatefulWidget {
     this.initialMessages,
     this.client,
     this.timeout = const Duration(seconds: 30),
+    this.backoff = const [Duration(seconds: 1), Duration(seconds: 2)],
   });
 
   /// 처음에 보여 줄 대화. 생략하면 실습용 가짜 대화가 들어간다.
@@ -92,6 +109,9 @@ class ChatPage extends StatefulWidget {
 
   /// 이 시간 안에 답이 없으면 timeout 오류로 본다.
   final Duration timeout;
+
+  /// 429를 받았을 때 다시 보내기 전에 기다리는 시간. 1초 → 2초로 점점 길어진다.
+  final List<Duration> backoff;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -148,17 +168,31 @@ class _ChatPageState extends State<ChatPage> {
       _error = null;
       _lastText = text;
     });
-    try {
-      final answer = await _ai.chat(text).timeout(widget.timeout);
-      if (!mounted) return;
-      setState(() {
-        _messages.add(ChatMessage(text: answer, isUser: false));
-        _waiting = false;
-      });
-    } on AiException catch (e) {
-      _fail(e.status);
-    } on TimeoutException {
-      _fail(null);
+    for (var attempt = 0; ; attempt++) {
+      try {
+        final answer = await _ai.chat(text).timeout(widget.timeout);
+        if (!mounted) return;
+        setState(() {
+          _messages.add(ChatMessage(text: answer, isUser: false));
+          _waiting = false;
+        });
+        return;
+      } on AiException catch (e) {
+        // ✅ 실습 ④-5 — 429면 지수 백오프 1s → 2s
+        //    "요청이 너무 많다"는 잠깐 쉬면 풀리는 오류라서 바로 실패로 보이지 않고,
+        //    1초 → 2초 기다렸다가 같은 메시지를 다시 보낸다. 그동안 타이핑 점은 계속 돈다.
+        //    두 번 다 안 되면 그때 오류 말풍선을 띄운다.
+        if (e.status == 429 && attempt < widget.backoff.length) {
+          await Future<void>.delayed(widget.backoff[attempt]);
+          if (!mounted) return;
+          continue;
+        }
+        _fail(e.status);
+        return;
+      } on TimeoutException {
+        _fail(null);
+        return;
+      }
     }
   }
 
@@ -193,7 +227,9 @@ class _ChatPageState extends State<ChatPage> {
 
   void _setMode(TestMode mode) {
     setState(() => _mode = mode);
-    _ai.failWith = mode.status;
+    _ai
+      ..failWith = mode.status
+      ..failTimes = mode.times;
   }
 
   /// ✅ 실습 ④-4 — AnimatedSwitcher로 전환
