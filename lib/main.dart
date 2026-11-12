@@ -176,6 +176,19 @@ class _ChatPageState extends State<ChatPage> {
     _ => '네트워크를 확인해 주세요',
   };
 
+  /// ✅ 실습 ④-2 — 오류 말풍선 + 다시 시도
+  ///    실패한 내 말풍선을 거두고, 그 글을 입력창에 되돌려 놓는다.
+  ///    그대로 다시 보내거나 고쳐서 보내면 된다.
+  void _retry() {
+    if (_waiting || _messages.isEmpty || !_messages.last.isUser) return;
+    late final ChatMessage failed;
+    setState(() {
+      failed = _messages.removeLast();
+      _error = null;
+    });
+    _controller.text = failed.text;
+  }
+
   void _setMode(TestMode mode) {
     setState(() => _mode = mode);
     _ai.failWith = mode.status;
@@ -235,7 +248,7 @@ class _ChatPageState extends State<ChatPage> {
                       if (hasStatus && index == 0) {
                         return _waiting
                             ? const _TypingBubble()
-                            : _ErrorBubble(message: _error!);
+                            : _ErrorBubble(message: _error!, onRetry: _retry);
                       }
                       final message =
                           _messages[_messages.length - 1 - (index - extra)];
@@ -363,10 +376,12 @@ class _Bubble extends StatelessWidget {
 }
 
 /// 요청이 실패했을 때 AI 쪽에 남는 오류 말풍선.
+/// 오류가 SnackBar처럼 사라지지 않고 대화 안에 남아, 다시 시도할 곳을 알려 준다.
 class _ErrorBubble extends StatelessWidget {
-  const _ErrorBubble({required this.message});
+  const _ErrorBubble({required this.message, required this.onRetry});
 
   final String message;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -383,19 +398,36 @@ class _ErrorBubble extends StatelessWidget {
           color: colorScheme.errorContainer,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 18,
-              color: colorScheme.onErrorContainer,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 18,
+                  color: colorScheme.onErrorContainer,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    message,
+                    style: TextStyle(color: colorScheme.onErrorContainer),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                message,
-                style: TextStyle(color: colorScheme.onErrorContainer),
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('다시 시도'),
+              style: TextButton.styleFrom(
+                foregroundColor: colorScheme.onErrorContainer,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
               ),
             ),
           ],

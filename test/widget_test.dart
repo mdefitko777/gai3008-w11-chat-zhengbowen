@@ -186,6 +186,29 @@ void main() {
     expect(find.text('"두 번째 질문"에 대한 답변입니다.'), findsOneWidget);
   });
 
+  testWidgets('④-2 다시 시도를 누르면 실패한 글이 입력창으로 돌아온다', (WidgetTester tester) async {
+    final client = fastClient(failWith: 401);
+    await tester.pumpWidget(chatApp(initialMessages: [], client: client));
+
+    await send(tester, '실패할 질문');
+    await settle(tester);
+    expect(find.text('다시 시도'), findsOneWidget);
+
+    await tester.tap(find.text('다시 시도'));
+    await tester.pump();
+
+    // 오류 말풍선은 사라지고, 실패한 글은 목록이 아니라 입력창에 있다
+    expect(errorBubble, findsNothing);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '실패할 질문',
+    );
+    expect(
+      find.descendant(of: find.byType(ListView), matching: find.text('실패할 질문')),
+      findsNothing,
+    );
+  });
+
   testWidgets('키보드가 올라와도 입력창이 가려지지 않는다', (WidgetTester tester) async {
     await tester.pumpWidget(const ChatLabApp());
 
