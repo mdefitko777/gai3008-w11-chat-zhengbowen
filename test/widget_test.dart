@@ -17,6 +17,9 @@ void main() {
     // 할 일 3 — 입력창과 전송 버튼이 있다
     expect(find.byType(TextField), findsOneWidget);
     expect(find.byIcon(Icons.send), findsOneWidget);
+
+    // 할 일 4 — 대화가 있으면 빈 상태 문구는 안 보인다
+    expect(find.text('무엇이든 물어보세요'), findsNothing);
   });
 
   testWidgets('말풍선이 좌우로 나뉜다', (WidgetTester tester) async {
@@ -51,26 +54,29 @@ void main() {
   });
 
   testWidgets('공백만 있으면 보내지 않는다', (WidgetTester tester) async {
-    await tester.pumpWidget(const ChatLabApp());
+    await tester.pumpWidget(
+      const MaterialApp(home: ChatPage(initialMessages: [])),
+    );
 
     await tester.enterText(find.byType(TextField), '   ');
     await tester.tap(find.byIcon(Icons.send));
     await tester.pump();
 
-    // 처음 가짜 대화 4줄 그대로다
-    expect(
-      find.descendant(of: find.byType(ListView), matching: find.byType(Text)),
-      findsNWidgets(4),
-    );
+    expect(find.text('무엇이든 물어보세요'), findsOneWidget);
   });
 
-  testWidgets('키보드의 전송 키로도 보낼 수 있다', (WidgetTester tester) async {
-    await tester.pumpWidget(const ChatLabApp());
+  testWidgets('목록이 비면 빈 상태 문구가 보이고, 보내면 사라진다', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: ChatPage(initialMessages: [])),
+    );
 
-    await tester.enterText(find.byType(TextField), '엔터로 보냄');
+    expect(find.text('무엇이든 물어보세요'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '첫 질문');
     await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pump();
 
-    expect(find.text('엔터로 보냄'), findsOneWidget);
+    expect(find.text('무엇이든 물어보세요'), findsNothing);
+    expect(find.text('첫 질문'), findsOneWidget);
   });
 }
