@@ -10,11 +10,67 @@ void main() {
     // 제목
     expect(find.text('AI Chat — 실습 1'), findsOneWidget);
 
-    // 할 일 1이 끝났다면 목록이 그려진다
+    // 할 일 1 — 목록이 그려진다
     expect(find.byType(ListView), findsOneWidget);
     expect(find.text('오늘 뭐 배워?'), findsOneWidget);
 
-    // 아직 입력창은 TODO 상태다
-    expect(find.textContaining('TODO 3'), findsOneWidget);
+    // 할 일 3 — 입력창과 전송 버튼이 있다
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byIcon(Icons.send), findsOneWidget);
+  });
+
+  testWidgets('말풍선이 좌우로 나뉜다', (WidgetTester tester) async {
+    await tester.pumpWidget(const ChatLabApp());
+
+    final userAlign = tester.widget<Align>(
+      find.ancestor(of: find.text('오늘 뭐 배워?'), matching: find.byType(Align)).first,
+    );
+    final aiAlign = tester.widget<Align>(
+      find
+          .ancestor(
+            of: find.text('AI 챗봇에 움직이는 응답을 붙입니다.'),
+            matching: find.byType(Align),
+          )
+          .first,
+    );
+
+    expect(userAlign.alignment, Alignment.centerRight);
+    expect(aiAlign.alignment, Alignment.centerLeft);
+  });
+
+  testWidgets('글을 보내면 목록에 추가되고 입력창이 비워진다', (WidgetTester tester) async {
+    await tester.pumpWidget(const ChatLabApp());
+
+    await tester.enterText(find.byType(TextField), '안녕하세요');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pump();
+
+    // 말풍선에 하나만 있고, 입력창에는 남아 있지 않다
+    expect(find.text('안녕하세요'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+  });
+
+  testWidgets('공백만 있으면 보내지 않는다', (WidgetTester tester) async {
+    await tester.pumpWidget(const ChatLabApp());
+
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pump();
+
+    // 처음 가짜 대화 4줄 그대로다
+    expect(
+      find.descendant(of: find.byType(ListView), matching: find.byType(Text)),
+      findsNWidgets(4),
+    );
+  });
+
+  testWidgets('키보드의 전송 키로도 보낼 수 있다', (WidgetTester tester) async {
+    await tester.pumpWidget(const ChatLabApp());
+
+    await tester.enterText(find.byType(TextField), '엔터로 보냄');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+
+    expect(find.text('엔터로 보냄'), findsOneWidget);
   });
 }
