@@ -79,4 +79,19 @@ void main() {
     expect(find.text('무엇이든 물어보세요'), findsNothing);
     expect(find.text('첫 질문'), findsOneWidget);
   });
+
+  testWidgets('키보드가 올라와도 입력창이 가려지지 않는다', (WidgetTester tester) async {
+    await tester.pumpWidget(const ChatLabApp());
+
+    // 키보드 높이 300을 흉내 낸다
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300 * 3);
+    addTearDown(tester.view.reset);
+    await tester.pump();
+
+    final screenHeight = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    final keyboardTop = screenHeight - 300 * 3 / tester.view.devicePixelRatio;
+    final fieldBottom = tester.getRect(find.byType(TextField)).bottom;
+
+    expect(fieldBottom, lessThanOrEqualTo(keyboardTop));
+  });
 }

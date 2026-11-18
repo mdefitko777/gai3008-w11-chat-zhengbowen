@@ -72,9 +72,11 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // TODO 5 — 키보드가 입력창을 가리지 않게
-      // TIP: Scaffold의 resizeToAvoidBottomInset은 기본값이 true다.
-      //      body를 SafeArea로 감싸 홈 인디케이터와 노치를 피한다.
+      // ✅ 할 일 5 — 키보드가 입력창을 가리지 않게
+      //    · resizeToAvoidBottomInset(기본값 true)이 키보드 높이만큼 body를 줄인다.
+      //    · 입력창이 Column 맨 아래에 있으므로 키보드 바로 위로 따라 올라온다.
+      //    · SafeArea가 홈 인디케이터와 노치를 피한다.
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(title: const Text('AI Chat — 실습 1')),
       body: SafeArea(
         child: Column(
